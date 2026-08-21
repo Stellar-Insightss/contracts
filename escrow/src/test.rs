@@ -4,8 +4,9 @@
 #![allow(clippy::panic)]
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    token, Address, Env,
+    symbol_short,
+    testutils::{Address as _, Events as _, Ledger},
+    token, Address, Env, Symbol, TryFromVal,
 };
 
 use crate::{EscrowServiceContract, EscrowServiceContractClient, EscrowState};
@@ -281,6 +282,41 @@ fn test_pause_prevents_create() {
 
     client.unpause(&admin);
     assert!(!client.is_paused());
+}
+
+fn has_event_with_topic0(env: &Env, topic0: Symbol) -> bool {
+    env.events().all().events().iter().any(|e| {
+        let soroban_sdk::xdr::ContractEventBody::V0(ref v0) = e.body;
+        if v0.topics.is_empty() {
+            return false;
+        }
+        <Symbol as TryFromVal<Env, soroban_sdk::xdr::ScVal>>::try_from_val(env, &v0.topics[0])
+            .map(|t| t == topic0)
+            .unwrap_or(false)
+    })
+}
+
+#[test]
+fn test_pause_and_unpause_emit_events() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(EscrowServiceContract, ());
+    let client = EscrowServiceContractClient::new(&env, &contract_id);
+    client.initialize(&admin);
+
+    client.pause(&admin);
+    assert!(
+        has_event_with_topic0(&env, symbol_short!("ESC_PSD")),
+        "expected an ESC_PSD event on pause"
+    );
+
+    client.unpause(&admin);
+    assert!(
+        has_event_with_topic0(&env, symbol_short!("ESC_UNP")),
+        "expected an ESC_UNP event on unpause"
+    );
 }
 
 #[test]

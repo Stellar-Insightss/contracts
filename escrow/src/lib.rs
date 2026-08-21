@@ -1,3 +1,24 @@
+//! `escrow` contract: two-party escrow with an admin-arbitrated dispute path.
+//!
+//! # Public API
+//! - `initialize` — one-time setup, sets the admin
+//! - `create_escrow` / `fund_escrow` / `release_funds` / `refund` — the
+//!   happy-path lifecycle (`Created` -> `Funded` -> `Released`/`Refunded`)
+//! - `raise_dispute` / `resolve_dispute` — admin-arbitrated dispute path
+//!   (`Funded` -> `Disputed` -> `Released`/`Refunded`)
+//! - `cancel_escrow` — cancel a not-yet-funded escrow
+//! - `pause` / `unpause` / `is_paused` — emergency stop for `create_escrow`/`fund_escrow`
+//! - `get_escrow` / `get_escrow_count` / `get_admin` / `get_version` — reads
+//!
+//! # Events
+//! See `docs/events/escrow.md` for the full schema. Every lifecycle
+//! transition (`initialize`, `create_escrow`, `fund_escrow`, `release_funds`,
+//! `refund`, `raise_dispute`, `resolve_dispute`, `cancel_escrow`, `pause`,
+//! `unpause`) emits a dedicated event.
+//!
+//! # State
+//! Admin, escrow counter, pause flag, and version live in instance storage;
+//! each `Escrow` lives in persistent storage under `DataKey::Escrow(id)`.
 #![no_std]
 
 mod errors;
@@ -6,7 +27,8 @@ mod events;
 use errors::Error;
 use events::{
     emit_cancelled, emit_dispute_raised, emit_dispute_resolved, emit_escrow_created,
-    emit_escrow_funded, emit_funds_released, emit_initialized, emit_refunded,
+    emit_escrow_funded, emit_funds_released, emit_initialized, emit_paused, emit_refunded,
+    emit_unpaused,
 };
 use soroban_sdk::{
     contract, contractimpl, contracttype, token, Address, Env, String,
@@ -137,6 +159,7 @@ impl EscrowServiceContract {
         }
         env.storage().instance().set(&DataKey::Paused, &true);
         bump_instance(&env);
+        emit_paused(&env, caller);
         Ok(())
     }
 
@@ -152,6 +175,7 @@ impl EscrowServiceContract {
         }
         env.storage().instance().set(&DataKey::Paused, &false);
         bump_instance(&env);
+        emit_unpaused(&env, caller);
         Ok(())
     }
 

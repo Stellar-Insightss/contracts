@@ -52,3 +52,15 @@ pub fn emit_cancelled(env: &Env, escrow_id: u64, cancelled_by: Address) {
         (escrow_id, cancelled_by),
     );
 }
+
+/// Fires once per successful `pause` call (admin-only). Contract-wide, not
+/// per-escrow: no individual escrow is affected directly, but `create_escrow`
+/// and `fund_escrow` both start rejecting new activity while paused.
+pub fn emit_paused(env: &Env, admin: Address) {
+    env.events().publish((symbol_short!("ESC_PSD"),), admin);
+}
+
+/// Fires once per successful `unpause` call (admin-only).
+pub fn emit_unpaused(env: &Env, admin: Address) {
+    env.events().publish((symbol_short!("ESC_UNP"),), admin);
+}
