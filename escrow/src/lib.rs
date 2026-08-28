@@ -1,3 +1,24 @@
+//! `escrow` contract: two-party escrow with an admin-arbitrated dispute path.
+//!
+//! # Public API
+//! - `initialize` — one-time setup, sets the admin
+//! - `create_escrow` / `fund_escrow` / `release_funds` / `refund` — the
+//!   happy-path lifecycle (`Created` -> `Funded` -> `Released`/`Refunded`)
+//! - `raise_dispute` / `resolve_dispute` — admin-arbitrated dispute path
+//!   (`Funded` -> `Disputed` -> `Released`/`Refunded`)
+//! - `cancel_escrow` — cancel a not-yet-funded escrow
+//! - `pause` / `unpause` / `is_paused` — emergency stop for `create_escrow`/`fund_escrow`
+//! - `get_escrow` / `get_escrow_count` / `get_admin` / `get_version` — reads
+//!
+//! # Events
+//! See `docs/events/escrow.md` for the full schema. Every lifecycle
+//! transition (`initialize`, `create_escrow`, `fund_escrow`, `release_funds`,
+//! `refund`, `raise_dispute`, `resolve_dispute`, `cancel_escrow`, `pause`,
+//! `unpause`) emits a dedicated event.
+//!
+//! # State
+//! Admin, escrow counter, pause flag, and version live in instance storage;
+//! each `Escrow` lives in persistent storage under `DataKey::Escrow(id)`.
 #![no_std]
 
 mod errors;
@@ -6,7 +27,8 @@ mod events;
 use errors::Error;
 use events::{
     emit_cancelled, emit_dispute_raised, emit_dispute_resolved, emit_escrow_created,
-    emit_escrow_funded, emit_funds_released, emit_initialized, emit_refunded,
+    emit_escrow_funded, emit_funds_released, emit_initialized, emit_paused, emit_refunded,
+    emit_unpaused,
 };
 use soroban_sdk::{
     contract, contractimpl, contracttype, token, Address, Env, String,
@@ -47,6 +69,20 @@ pub enum EscrowState {
     Cancelled = 5,
 }
 
+/// One escrow agreement. Stored in persistent storage under
+/// `DataKey::Escrow(id)`, keyed by the `id` assigned at `create_escrow` time
+/// (a monotonically increasing counter shared across all escrows in this
+/// contract instance, stored under `DataKey::EscrowCount`).
+///
+/// Lifecycle: `create_escrow` writes it in the `Created` state ->
+/// `fund_escrow` transitions it to `Funded` -> `release_funds`/`refund`
+/// transition it to `Released`/`Refunded`, OR `raise_dispute` transitions a
+/// `Funded` escrow to `Disputed`, which `resolve_dispute` then resolves to
+/// `Released`/`Refunded`. A `Created` (not yet funded) escrow can instead go
+/// straight to `Cancelled` via `cancel_escrow`. Every transition also emits
+/// a matching event (see `docs/events/escrow.md`) so this struct itself is
+/// not the only way to observe a change, but it is the source of truth: a
+/// reader can always re-fetch the current value via `get_escrow(id)`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow {
@@ -137,6 +173,7 @@ impl EscrowServiceContract {
         }
         env.storage().instance().set(&DataKey::Paused, &true);
         bump_instance(&env);
+        emit_paused(&env, caller);
         Ok(())
     }
 
@@ -152,6 +189,7 @@ impl EscrowServiceContract {
         }
         env.storage().instance().set(&DataKey::Paused, &false);
         bump_instance(&env);
+        emit_unpaused(&env, caller);
         Ok(())
     }
 
