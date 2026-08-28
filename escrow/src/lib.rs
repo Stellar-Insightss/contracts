@@ -69,6 +69,20 @@ pub enum EscrowState {
     Cancelled = 5,
 }
 
+/// One escrow agreement. Stored in persistent storage under
+/// `DataKey::Escrow(id)`, keyed by the `id` assigned at `create_escrow` time
+/// (a monotonically increasing counter shared across all escrows in this
+/// contract instance, stored under `DataKey::EscrowCount`).
+///
+/// Lifecycle: `create_escrow` writes it in the `Created` state ->
+/// `fund_escrow` transitions it to `Funded` -> `release_funds`/`refund`
+/// transition it to `Released`/`Refunded`, OR `raise_dispute` transitions a
+/// `Funded` escrow to `Disputed`, which `resolve_dispute` then resolves to
+/// `Released`/`Refunded`. A `Created` (not yet funded) escrow can instead go
+/// straight to `Cancelled` via `cancel_escrow`. Every transition also emits
+/// a matching event (see `docs/events/escrow.md`) so this struct itself is
+/// not the only way to observe a change, but it is the source of truth: a
+/// reader can always re-fetch the current value via `get_escrow(id)`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow {
