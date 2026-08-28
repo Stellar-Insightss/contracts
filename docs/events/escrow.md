@@ -18,9 +18,12 @@ is equivalent to counting/weighting calls.
 | `emit_dispute_raised` | `(ESC_DIS,)` | `raise_dispute` | `(escrow_id, raised_by)` |
 | `emit_dispute_resolved` | `(ESC_RSV,)` | `resolve_dispute` | `(escrow_id, winner, amount)` |
 | `emit_cancelled` | `(ESC_CAN,)` | `cancel_escrow` | `(escrow_id, cancelled_by)` |
+| `emit_paused` | `(ESC_PSD,)` | `pause` (admin-only) | `admin: Address` |
+| `emit_unpaused` | `(ESC_UNP,)` | `unpause` (admin-only) | `admin: Address` |
 
-`pause`/`unpause` currently emit no events — tracked separately (see the
-paired "add lifecycle events" issue for this crate).
+`pause`/`unpause` are contract-wide, not per-escrow: they don't change any
+individual `Escrow`'s state, they only block `create_escrow`/`fund_escrow`
+while paused. They feed the status panel, not the Top Contracts ranking.
 
 ## The `Escrow` struct (the underlying state each event reflects)
 
